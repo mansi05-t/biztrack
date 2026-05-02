@@ -226,6 +226,9 @@ label { font-size: 12px; font-weight: 600; color: var(--ink2); display: block; m
           <option value="Transport">Transport/Delivery</option>
           <option value="Marketing">Marketing</option>
           <option value="Equipment">Equipment/Repair</option>
+          <option value="Gas">Gas</option>
+          <option value="BBMP Garbage">BBMP Garbage</option>
+          <option value="Food">Food</option>
           <option value="Misc">Misc Business</option>
           <option value="Custom">+ Custom...</option>
         </select>
@@ -308,12 +311,39 @@ label { font-size: 12px; font-weight: 600; color: var(--ink2); display: block; m
     <span style="font-size:12px;color:var(--ink3)" id="tracker-total-label">₹0</span>
   </div>
 
+  <!-- DATE FILTERS -->
+  <div class="card" style="padding:12px 14px;margin-bottom:10px">
+    <div style="font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Date Range</div>
+    <div style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px" id="date-preset-bar">
+      <div class="chip active" onclick="setDatePreset('month',this)">This Month</div>
+      <div class="chip" onclick="setDatePreset('today',this)">Today</div>
+      <div class="chip" onclick="setDatePreset('week',this)">This Week</div>
+      <div class="chip" onclick="setDatePreset('last7',this)">Last 7 Days</div>
+      <div class="chip" onclick="setDatePreset('last30',this)">Last 30 Days</div>
+      <div class="chip" onclick="setDatePreset('custom',this)">Custom</div>
+    </div>
+    <div id="custom-date-wrap" style="display:none;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div>
+        <label>From</label>
+        <input type="date" id="filter-from" onchange="applyCustomDate()">
+      </div>
+      <div>
+        <label>To</label>
+        <input type="date" id="filter-to" onchange="applyCustomDate()">
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--accent);margin-top:6px" id="date-range-label"></div>
+  </div>
+
   <div class="filter-bar" id="tracker-filters">
     <div class="chip active" onclick="setFilter('All',this)">All</div>
     <div class="chip" onclick="setFilter('Grocery',this)">Grocery</div>
     <div class="chip" onclick="setFilter('Packaging',this)">Packaging</div>
     <div class="chip" onclick="setFilter('Salary',this)">Salary</div>
     <div class="chip" onclick="setFilter('Petrol',this)">Petrol</div>
+    <div class="chip" onclick="setFilter('Gas',this)">Gas</div>
+    <div class="chip" onclick="setFilter('Food',this)">Food</div>
+    <div class="chip" onclick="setFilter('BBMP Garbage',this)">BBMP</div>
     <div class="chip" onclick="setFilter('Raw Material',this)">Raw Material</div>
     <div class="chip" onclick="setFilter('Transport',this)">Transport</div>
     <div class="chip" onclick="setFilter('Marketing',this)">Marketing</div>
@@ -437,7 +467,8 @@ const CAT_COLORS = {
   'Water Bill':'#38bdf8','Electricity':'#fb923c','Maintenance':'#f472b6',
   'Salary':'#34d399','Petrol':'#f59e0b','Cigarette':'#9ca3af',
   'Swiggy/Insta':'#ff6b35','Raw Material':'#22d3ee','Transport':'#6366f1',
-  'Marketing':'#ec4899','Equipment':'#84cc16','Misc':'#64748b','Custom':'#a78bfa'
+  'Marketing':'#ec4899','Equipment':'#84cc16','Misc':'#64748b','Custom':'#a78bfa',
+  'Gas':'#fb7185','BBMP Garbage':'#a3e635','Food':'#f97316'
 };
 const SUBCAT_MAP = {
   'Grocery': ['Shop','Home','Both'],
@@ -451,17 +482,103 @@ const SUBCAT_MAP = {
   'Marketing': ['Online','Print','Social Media','Other'],
   'Equipment': ['Shop','Vehicle','Kitchen','Other'],
   'Maintenance': ['Shop','Home','Vehicle','Other'],
+  'Gas': ['Shop','Home','Kitchen','Other'],
+  'BBMP Garbage': ['Shop','Home','Both'],
+  'Food': ['Shop','Home','Team','Personal'],
 };
 const DEFAULT_SUBCATS = ['Shop','Home','Personal','Business','Other'];
 
 let currentMonth = new Date().toISOString().slice(0,7);
 let activeFilter = 'All';
+let dateFrom = null;
+let dateTo = null;
+let datePreset = 'month';
+
+// ===== DATE FILTERS =====
+function setDatePreset(preset, elBtn) {
+  datePreset = preset;
+  document.querySelectorAll('#date-preset-bar .chip').forEach(c=>c.classList.remove('active'));
+  elBtn.classList.add('active');
+  const customWrap = el('custom-date-wrap');
+  
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0,10);
+
+  if(preset === 'today') {
+    dateFrom = dateTo = todayStr;
+    customWrap.style.display = 'none';
+    el('date-range-label').textContent = 'Showing: Today only';
+  } else if(preset === 'week') {
+    const day = today.getDay();
+    const monday = new Date(today); monday.setDate(today.getDate() - (day===0?6:day-1));
+    dateFrom = monday.toISOString().slice(0,10); dateTo = todayStr;
+    customWrap.style.display = 'none';
+    el('date-range-label').textContent = 'Showing: ' + fmtDate(dateFrom) + ' → ' + fmtDate(dateTo);
+  } else if(preset === 'last7') {
+    const d = new Date(today); d.setDate(d.getDate()-6);
+    dateFrom = d.toISOString().slice(0,10); dateTo = todayStr;
+    customWrap.style.display = 'none';
+    el('date-range-label').textContent = 'Showing: Last 7 days';
+  } else if(preset === 'last30') {
+    const d = new Date(today); d.setDate(d.getDate()-29);
+    dateFrom = d.toISOString().slice(0,10); dateTo = todayStr;
+    customWrap.style.display = 'none';
+    el('date-range-label').textContent = 'Showing: Last 30 days';
+  } else if(preset === 'custom') {
+    customWrap.style.display = 'grid';
+    el('filter-from').value = dateFrom || currentMonth+'-01';
+    el('filter-to').value = dateTo || todayStr;
+    el('date-range-label').textContent = 'Pick your date range below';
+    return;
+  } else {
+    // month
+    dateFrom = dateTo = null;
+    customWrap.style.display = 'none';
+    el('date-range-label').textContent = 'Showing: ' + formatMonth(currentMonth);
+  }
+  renderTracker();
+}
+
+function applyCustomDate() {
+  dateFrom = el('filter-from').value;
+  dateTo = el('filter-to').value;
+  if(dateFrom && dateTo) {
+    el('date-range-label').textContent = fmtDate(dateFrom) + ' → ' + fmtDate(dateTo);
+    renderTracker();
+  }
+}
+
+function fmtDate(d) {
+  if(!d) return '';
+  const [y,mo,dy] = d.split('-');
+  return parseInt(dy)+' '+MONTHS[parseInt(mo)-1]+' '+y;
+}
+
+function getFilteredExpenses() {
+  // Get expenses across all months if date range spans multiple months
+  let all = [];
+  if(dateFrom && dateTo && datePreset !== 'month') {
+    // Collect all months in range
+    const months = new Set();
+    const start = new Date(dateFrom); const end = new Date(dateTo);
+    const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+    while(cur <= end) {
+      months.add(cur.toISOString().slice(0,7));
+      cur.setMonth(cur.getMonth()+1);
+    }
+    months.forEach(m => { all = all.concat(sload('exp',m)||[]); });
+    all = all.filter(x => x.date >= dateFrom && x.date <= dateTo);
+  } else {
+    all = sload('exp', currentMonth) || [];
+  }
+  return all;
+}
 
 // ===== STORAGE =====
 const skey = (t,m) => `biztrack_${t}_${m||currentMonth}`;
 const ssave = (t,d,m) => localStorage.setItem(skey(t,m), JSON.stringify(d));
 const sload = (t,m) => { try { return JSON.parse(localStorage.getItem(skey(t,m)))||null; } catch(e){return null;} };
-const loadExp = () => sload('exp')||[];
+const loadExp = () => sload('exp', currentMonth)||[];
 
 // ===== MONTH =====
 function formatMonth(m) { const [y,mo]=m.split('-'); return MONTHS[parseInt(mo)-1]+' '+y; }
@@ -474,7 +591,13 @@ function renderMonthModal() {
 }
 function selectMonth(m) {
   currentMonth=m; el('month-btn').textContent=formatMonth(m)+' ▾';
-  el('month-modal').classList.remove('open'); refreshAll();
+  el('month-modal').classList.remove('open');
+  dateFrom = dateTo = null; datePreset = 'month';
+  // reset date preset chips
+  document.querySelectorAll('#date-preset-bar .chip').forEach((c,i)=>c.classList.toggle('active',i===0));
+  if(el('custom-date-wrap')) el('custom-date-wrap').style.display='none';
+  if(el('date-range-label')) el('date-range-label').textContent='Showing: '+formatMonth(m);
+  refreshAll();
 }
 
 // ===== SUBCATS =====
@@ -624,7 +747,7 @@ function setFilter(cat, el_) {
 }
 
 function renderTracker() {
-  const all = loadExp();
+  const all = getFilteredExpenses();
   const filtered = activeFilter==='All'?all:all.filter(x=>x.cat===activeFilter);
   const total = filtered.reduce((a,x)=>a+x.amount,0);
   el('tracker-total-label').textContent = fmt(total)+' · '+filtered.length+' transactions';
